@@ -30,34 +30,19 @@
 
 const void * const pvNullPointer;
 
-static OS_MEM *pQueueMem;
-static char pcQueueMemoryPool[LWIP_MAX_QS * sizeof(TQ_DESCR) +3];
-
 OS_STK sys_stack[LWIP_MAX_TASKS][LWIP_STACK_SIZE];
 static INT8U sys_thread_no;
 
 /*-----------------------------------------------------------------------------------*/
 err_t sys_mbox_new(sys_mbox_t *mbox, int size)
 {
+    INT8U ucErr;
 
-    /* XXX We ignore the size parameter. */
-    INT8U       ucErr;
-    PQ_DESCR    pQDesc;
+    mbox->pQ = OSQCreate(mbox->pvQEntries, LWIP_Q_SIZE);
+    LWIP_ASSERT( "OSQCreate ", mbox->pQ != NULL );
 
-    pQDesc = OSMemGet( pQueueMem, &ucErr );
-    LWIP_ASSERT( "OSMemGet ", ucErr == OS_NO_ERR );
-    if( ucErr == OS_NO_ERR )
-    {
-        pQDesc->pQ = OSQCreate(pQDesc->pvQEntries, LWIP_Q_SIZE);
-        LWIP_ASSERT( "OSQCreate ", pQDesc->pQ != NULL );
-        if( pQDesc->pQ != NULL )
-        {
-            pQDesc->is_valid = 1;
-            *mbox = pQDesc;
-            return ERR_OK;
-        }
-    }
-    return ERR_MEM;
+    mbox->is_valid = 1;
+    return ERR_OK;
 }
 
 /*-----------------------------------------------------------------------------------*/
@@ -65,49 +50,43 @@ void sys_mbox_free(sys_mbox_t *mbox)
 {
     INT8U     ucErr;
     
-    LWIP_ASSERT( "sys_mbox_free ", mbox != NULL);   
-    LWIP_ASSERT( "sys_mbox_free ", *mbox != NULL);   
-    OSQFlush( (*mbox)->pQ );
+    LWIP_ASSERT("sys_mbox_free", mbox != NULL);   
+    OSQFlush(mbox->pQ);
 
-    OSQDel( (*mbox)->pQ, OS_DEL_NO_PEND, &ucErr);
-    LWIP_ASSERT( "OSQDel ", ucErr == OS_NO_ERR);         
-
-    ucErr = OSMemPut( pQueueMem, *mbox);
-    LWIP_ASSERT( "OSMemPut ", ucErr == OS_NO_ERR );
+    OSQDel(mbox->pQ, OS_DEL_NO_PEND, &ucErr);
+    LWIP_ASSERT("OSQDel", ucErr == OS_NO_ERR);
 }
 
 /*-----------------------------------------------------------------------------------*/
 void sys_mbox_post(sys_mbox_t *mbox, void *msg)
 {
-
     INT8U status;
 
-    if( !msg )
+    if(msg == NULL)
         msg = (void*)&pvNullPointer;
 
 
-    status = OSQPost((*mbox)->pQ, msg);
+    status = OSQPost(mbox->pQ, msg);
 
     /* TODO: what if it is full ? */
-    LWIP_ASSERT("OSQPost", status == OS_NO_ERR );
+    LWIP_ASSERT("OSQPost", status == OS_NO_ERR);
 }
 
 
 err_t sys_mbox_trypost(sys_mbox_t *mbox, void *msg)
 {
-
     INT8U status;
 
-    if( !msg )
+    if(msg==NULL)
         msg = (void*)&pvNullPointer;
 
 
-    status = OSQPost((*mbox)->pQ, msg);
+    status = OSQPost(mbox->pQ, msg);
 
     if(status == OS_Q_FULL)
         return ERR_MEM;
 
-    LWIP_ASSERT("OSQPost", status == OS_NO_ERR );
+    LWIP_ASSERT("OSQPost", status == OS_NO_ERR);
     return ERR_OK; 
 }
 
@@ -133,18 +112,14 @@ u32_t sys_arch_mbox_fetch(sys_mbox_t *mbox, void **msg, u32_t timeout)
         ucos_timeout = 0;
     }
 
-    temp = OSQPend( (*mbox)->pQ, ucos_timeout, &ucErr );
+    temp = OSQPend(mbox->pQ, ucos_timeout, &ucErr);
 
     if(msg)
     {
         if( temp == (void*)&pvNullPointer )
-        {
             *msg = NULL;
-        }
         else
-        {
             *msg = temp;
-        }
     }
     
     if( ucErr == OS_TIMEOUT )
@@ -167,7 +142,7 @@ u32_t sys_arch_mbox_tryfetch(sys_mbox_t *mbox, void **msg)
     INT8U ucErr;
     void *temp;
 
-    temp = OSQAccept((*mbox)->pQ, &ucErr);
+    temp = OSQAccept(mbox->pQ, &ucErr);
 
     if(temp == NULL || ucErr == OS_Q_EMPTY)
         return SYS_MBOX_EMPTY;
@@ -175,13 +150,9 @@ u32_t sys_arch_mbox_tryfetch(sys_mbox_t *mbox, void **msg)
     if(msg)
     {
         if( temp == (void*)&pvNullPointer )
-        {
             *msg = NULL;
-        }
         else
-        {
             *msg = temp;
-        }
     }
     
     return 0;
@@ -189,14 +160,12 @@ u32_t sys_arch_mbox_tryfetch(sys_mbox_t *mbox, void **msg)
 
 int sys_mbox_valid(sys_mbox_t *mbox) {
     LWIP_ASSERT( "sys_mbox_valid", mbox != NULL );
-    LWIP_ASSERT( "sys_mbox_valid", *mbox != NULL );
-    return (*mbox)->is_valid;
+    return mbox->is_valid;
 }
 
 void sys_mbox_set_invalid(sys_mbox_t *mbox) {
     LWIP_ASSERT( "sys_mbox_valid", mbox != NULL );
-    LWIP_ASSERT( "sys_mbox_valid", *mbox != NULL );
-    (*mbox)->is_valid = 0;
+    mbox->is_valid = 0;
 }
 
 /*-----------------------------------------------------------------------------------*/
@@ -268,11 +237,6 @@ void sys_sem_free(sys_sem_t *sem)
 /*-----------------------------------------------------------------------------------*/
 void sys_init(void)
 {
-    INT8U   ucErr;
-
-    pQueueMem = OSMemCreate( (void*)((u32_t)((u32_t)pcQueueMemoryPool+3) & ~3), LWIP_MAX_QS, sizeof(TQ_DESCR), &ucErr );
-    LWIP_ASSERT( "OSMemCreate ", ucErr == OS_NO_ERR );
-
     sys_thread_no = 0;
 }
 

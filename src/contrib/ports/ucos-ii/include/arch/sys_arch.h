@@ -35,10 +35,9 @@ typedef struct {
     OS_EVENT*   pQ;
     void*       pvQEntries[LWIP_Q_SIZE];
     int         is_valid;
-} TQ_DESCR, *PQ_DESCR;
+} sys_mbox_t;
     
 typedef OS_EVENT* sys_sem_t;
-typedef PQ_DESCR  sys_mbox_t;
 typedef INT8U     sys_thread_t;
 
 typedef OS_CPU_SR sys_prot_t; 
