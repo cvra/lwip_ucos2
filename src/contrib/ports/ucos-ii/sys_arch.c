@@ -251,13 +251,14 @@ void sys_init(void)
 /*-----------------------------------------------------------------------------------*/
 sys_thread_t sys_thread_new(const char *name, lwip_thread_fn function, void *arg, int stacksize, int prio) 
 {
-
-    /* XXX Handle same task priorities. */
     INT8U bTemp;
 
     LWIP_ASSERT("sys_thread_new: Max Sys. Tasks reached.", sys_thread_no < LWIP_MAX_TASKS);
 
     ++sys_thread_no; /* next task created will be one lower to this one */
+
+    /* UCOS2 doesn't allow for multiple tasks to have the same priority. */
+    prio = DEFAULT_THREAD_PRIO + sys_thread_no;
 
 #if (STACK_PROFILE_EN == 1)
     if(bTemp = OSTaskCreateExt( function, arg, &sys_stack[sys_thread_no - 1][LWIP_STACK_SIZE - 1], prio, sys_thread_no - 1,
