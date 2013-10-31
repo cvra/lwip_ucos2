@@ -33,6 +33,7 @@
 
 typedef struct {
     OS_EVENT*   pQ;
+    OS_EVENT*   Q_full;
     void*       pvQEntries[LWIP_Q_SIZE];
     int         is_valid;
 } sys_mbox_t;
