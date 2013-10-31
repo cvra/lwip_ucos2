@@ -28,7 +28,6 @@
 #include "arch/sys_arch.h"
 
 
-const void * const pvNullPointer;
 
 OS_STK sys_stack[LWIP_MAX_TASKS][LWIP_STACK_SIZE];
 static INT8U sys_thread_no;
@@ -40,7 +39,7 @@ err_t sys_mbox_new(sys_mbox_t *mbox, int size)
 
     mbox->pQ = OSQCreate(mbox->pvQEntries, LWIP_Q_SIZE);
     LWIP_ASSERT("OSQCreate", mbox->pQ != NULL );
-    mbox->Q_full = OSSemCreate(0);
+    mbox->Q_full = OSSemCreate(LWIP_Q_SIZE);
     LWIP_ASSERT("OSSemCreate", mbox->Q_full != NULL );
 
     mbox->is_valid = 1;
@@ -67,17 +66,10 @@ void sys_mbox_post(sys_mbox_t *mbox, void *msg)
 {
     INT8U status;
 
-    if(msg == NULL)
-        msg = (void*)&pvNullPointer;
-
+    /* Wait for a task to fetch from the queue. */ 
+    OSSemPend(mbox->Q_full, 0, &status);
     status = OSQPost(mbox->pQ, msg);
-    while(status == OS_Q_FULL) {
-        /* Wait for a task to fetch from the queue. */ 
-        OSSemPend(mbox->Q_full, 0, &status);
 
-        /* Retry sending the message. */
-        status = OSQPost(mbox->pQ, msg);
-    }
     LWIP_ASSERT("OSQPost", status == OS_NO_ERR);
 }
 
@@ -86,16 +78,14 @@ err_t sys_mbox_trypost(sys_mbox_t *mbox, void *msg)
 {
     INT8U status;
 
-    if(msg==NULL)
-        msg = (void*)&pvNullPointer;
-
-
-    status = OSQPost(mbox->pQ, msg);
-
-    if(status == OS_Q_FULL)
+    if(OSSemAccept(mbox->Q_full)) {
+        status = OSQPost(mbox->pQ, msg);
+        LWIP_ASSERT("OSQPost", status == OS_NO_ERR);
+    }
+    else {
         return ERR_MEM;
+    }
 
-    LWIP_ASSERT("OSQPost", status == OS_NO_ERR);
     return ERR_OK; 
 }
 
@@ -129,10 +119,7 @@ u32_t sys_arch_mbox_fetch(sys_mbox_t *mbox, void **msg, u32_t timeout)
 
     if(msg)
     {
-        if( temp == (void*)&pvNullPointer )
-            *msg = NULL;
-        else
-            *msg = temp;
+        *msg = temp;
     }
     
     if( ucErr == OS_TIMEOUT )
@@ -155,21 +142,16 @@ u32_t sys_arch_mbox_tryfetch(sys_mbox_t *mbox, void **msg)
     INT8U ucErr;
     void *temp;
 
+    temp = OSQAccept(mbox->pQ, &ucErr);
+
+    if(temp == NULL && ucErr == OS_Q_EMPTY)
+        return SYS_MBOX_EMPTY;
+    
     /* Tells tasks waiting because of a full buffer that the buffer is not full
      * anymore. */
     OSSemPost(mbox->Q_full);
-    temp = OSQAccept(mbox->pQ, &ucErr);
 
-    if(temp == NULL || ucErr == OS_Q_EMPTY)
-        return SYS_MBOX_EMPTY;
-
-    if(msg)
-    {
-        if( temp == (void*)&pvNullPointer )
-            *msg = NULL;
-        else
-            *msg = temp;
-    }
+    *msg = temp;
     
     return 0;
 }
