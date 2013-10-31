@@ -34,6 +34,7 @@
 typedef struct {
     OS_EVENT*   pQ;
     void*       pvQEntries[LWIP_Q_SIZE];
+    int         is_valid;
 } TQ_DESCR, *PQ_DESCR;
     
 typedef OS_EVENT* sys_sem_t;

@@ -52,6 +52,7 @@ err_t sys_mbox_new(sys_mbox_t *mbox, int size)
         LWIP_ASSERT( "OSQCreate ", pQDesc->pQ != NULL );
         if( pQDesc->pQ != NULL )
         {
+            pQDesc->is_valid = 1;
             *mbox = pQDesc;
             return ERR_OK;
         }
@@ -184,6 +185,18 @@ u32_t sys_arch_mbox_tryfetch(sys_mbox_t *mbox, void **msg)
     }
     
     return 0;
+}
+
+int sys_mbox_valid(sys_mbox_t *mbox) {
+    LWIP_ASSERT( "sys_mbox_valid", mbox != NULL );
+    LWIP_ASSERT( "sys_mbox_valid", *mbox != NULL );
+    return (*mbox)->is_valid;
+}
+
+void sys_mbox_set_invalid(sys_mbox_t *mbox) {
+    LWIP_ASSERT( "sys_mbox_valid", mbox != NULL );
+    LWIP_ASSERT( "sys_mbox_valid", *mbox != NULL );
+    (*mbox)->is_valid = 0;
 }
 
 /*-----------------------------------------------------------------------------------*/
