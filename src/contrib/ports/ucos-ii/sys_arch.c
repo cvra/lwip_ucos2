@@ -35,8 +35,6 @@ static INT8U sys_thread_no;
 /*-----------------------------------------------------------------------------------*/
 err_t sys_mbox_new(sys_mbox_t *mbox, int size)
 {
-    INT8U ucErr;
-
     mbox->pQ = OSQCreate(mbox->pvQEntries, LWIP_Q_SIZE);
     LWIP_ASSERT("OSQCreate", mbox->pQ != NULL );
     mbox->Q_full = OSSemCreate(LWIP_Q_SIZE);
@@ -169,8 +167,9 @@ void sys_mbox_set_invalid(sys_mbox_t *mbox) {
 /*-----------------------------------------------------------------------------------*/
 err_t sys_sem_new(sys_sem_t *pSem, u8_t count)
 {
-    *pSem = OSSemCreate( (INT16U)count );
-    LWIP_ASSERT( "OSSemCreate ", *pSem != NULL );
+    pSem->sem = OSSemCreate( (INT16U)count );
+    LWIP_ASSERT( "OSSemCreate ", pSem->sem != NULL );
+    pSem->is_valid = 1;
     return ERR_OK;
 }
 
@@ -195,7 +194,7 @@ u32_t sys_arch_sem_wait(sys_sem_t *sem, u32_t timeout)
         ucos_timeout = 0;
     }
 
-    OSSemPend( *sem, ucos_timeout, &ucErr );        
+    OSSemPend(sem->sem, ucos_timeout, &ucErr );        
     if( ucErr == OS_TIMEOUT )
     {
         timeout = SYS_ARCH_TIMEOUT;
@@ -216,7 +215,7 @@ u32_t sys_arch_sem_wait(sys_sem_t *sem, u32_t timeout)
 void sys_sem_signal(sys_sem_t *sem)
 {
     INT8U     ucErr;
-    ucErr = OSSemPost( *sem );
+    ucErr = OSSemPost(sem->sem);
  
     /* It may happen that a connection is already reset and the semaphore is deleted
        if this function is called. Therefore ASSERTION should not be called */   
@@ -228,10 +227,21 @@ void sys_sem_free(sys_sem_t *sem)
 {
     INT8U     ucErr;
     
-    (void)OSSemDel( *sem, OS_DEL_NO_PEND, &ucErr );
-    
+    OSSemDel(sem->sem, OS_DEL_NO_PEND, &ucErr ); 
     LWIP_ASSERT( "OSSemDel ", ucErr == OS_NO_ERR );
 }
+
+int sys_sem_valid(sys_sem_t *sem)
+{
+    return sem->is_valid;
+}
+
+void sys_sem_set_invalid(sys_sem_t *sem)
+{
+    sem->is_valid = 0;
+}
+
+
 /*-----------------------------------------------------------------------------------*/
 void sys_init(void)
 {

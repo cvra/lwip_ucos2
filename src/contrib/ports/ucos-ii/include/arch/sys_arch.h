@@ -37,8 +37,12 @@ typedef struct {
     void*       pvQEntries[LWIP_Q_SIZE];
     int         is_valid;
 } sys_mbox_t;
+
+typedef struct {
+    OS_EVENT*   sem;
+    int         is_valid;
+} sys_sem_t; 
     
-typedef OS_EVENT* sys_sem_t;
 typedef INT8U     sys_thread_t;
 
 typedef OS_CPU_SR sys_prot_t; 
