@@ -64,10 +64,11 @@ void sys_mbox_post(sys_mbox_t *mbox, void *msg)
 {
     INT8U status;
 
-    /* Wait for a task to fetch from the queue. */ 
+    /* Wait for an available slot in the queue. */
     OSSemPend(mbox->Q_full, 0, &status);
-    status = OSQPost(mbox->pQ, msg);
 
+    /* Posts the message to the queue. */
+    status = OSQPost(mbox->pQ, msg);
     LWIP_ASSERT("OSQPost", status == OS_NO_ERR);
 }
 
@@ -79,8 +80,7 @@ err_t sys_mbox_trypost(sys_mbox_t *mbox, void *msg)
     if(OSSemAccept(mbox->Q_full)) {
         status = OSQPost(mbox->pQ, msg);
         LWIP_ASSERT("OSQPost", status == OS_NO_ERR);
-    }
-    else {
+    } else {
         return ERR_MEM;
     }
 
@@ -95,17 +95,13 @@ u32_t sys_arch_mbox_fetch(sys_mbox_t *mbox, void **msg, u32_t timeout)
     void *temp;
 
     /* convert LwIP timeout (in milliseconds) to uC/OS-II timeout (in OS_TICKS) */
-    if(timeout)
-    {
+    if(timeout) {
         ucos_timeout = (timeout * OS_TICKS_PER_SEC)/1000;
-
         if(ucos_timeout < 1)
             ucos_timeout = 1;
         else if(ucos_timeout > 65535)
             ucos_timeout = 65535;
-    }
-    else
-    {
+    } else {
         ucos_timeout = 0;
     }
 
@@ -113,20 +109,17 @@ u32_t sys_arch_mbox_fetch(sys_mbox_t *mbox, void **msg, u32_t timeout)
 
     /* Tells tasks waiting because of a full buffer that the buffer is not full
      * anymore. */
+    /* XXX should this be placed after timeout detection ?*/
     OSSemPost(mbox->Q_full);
 
-    if(msg)
-    {
+    if(msg) {
         *msg = temp;
     }
     
-    if( ucErr == OS_TIMEOUT )
-    {
+    if(ucErr == OS_TIMEOUT) {
         timeout = SYS_ARCH_TIMEOUT;
-    }
-    else
-    {
-        LWIP_ASSERT( "OSQPend ", ucErr == OS_NO_ERR );
+    } else {
+        LWIP_ASSERT("OSQPend ", ucErr == OS_NO_ERR);
         /* Calculate time we waited for the message to arrive. */      
         /* XXX: we cheat and just pretend that we waited for long! */
         timeout = 1;
@@ -154,13 +147,15 @@ u32_t sys_arch_mbox_tryfetch(sys_mbox_t *mbox, void **msg)
     return 0;
 }
 
-int sys_mbox_valid(sys_mbox_t *mbox) {
-    LWIP_ASSERT( "sys_mbox_valid", mbox != NULL );
+int sys_mbox_valid(sys_mbox_t *mbox)
+{
+    LWIP_ASSERT("sys_mbox_valid", mbox != NULL);
     return mbox->is_valid;
 }
 
-void sys_mbox_set_invalid(sys_mbox_t *mbox) {
-    LWIP_ASSERT( "sys_mbox_valid", mbox != NULL );
+void sys_mbox_set_invalid(sys_mbox_t *mbox)
+{
+    LWIP_ASSERT("sys_mbox_valid", mbox != NULL);
     mbox->is_valid = 0;
 }
 
@@ -179,56 +174,41 @@ u32_t sys_arch_sem_wait(sys_sem_t *sem, u32_t timeout)
     INT8U  ucErr;
     INT32U ucos_timeout;
 
-    /* convert LwIP timeout (in milliseconds) to uC/OS-II timeout (in OS_TICKS) */
-    if(timeout)
-    {
+    /* Convert lwIP timeout (in milliseconds) to uC/OS-II timeout (in OS_TICKS) */
+    if(timeout) {
         ucos_timeout = (timeout * OS_TICKS_PER_SEC)/1000;
-
         if(ucos_timeout < 1)
             ucos_timeout = 1;
         else if(ucos_timeout > 65535)
             ucos_timeout = 65535;
-    }
-    else
-    {
+    } else {
         ucos_timeout = 0;
     }
 
     OSSemPend(sem->sem, ucos_timeout, &ucErr );        
-    if( ucErr == OS_TIMEOUT )
-    {
+    if(ucErr == OS_TIMEOUT) {
         timeout = SYS_ARCH_TIMEOUT;
-    }
-    else
-    {
-        //Semaphore is used for pbuf_free, which could get called from an ISR
-        //LWIP_ASSERT( "OSSemPend ", ucErr == OS_NO_ERR );
-
+    } else {
         /* Calculate time we waited for the message to arrive. */      
-        /* XXX: we cheat and just pretend that we waited for long! */
+        /* TODO: we cheat and just pretend that we waited for long! */
         timeout = 1;
     }
     return timeout;
 }
 
 /*-----------------------------------------------------------------------------------*/
-void sys_sem_signal(sys_sem_t *sem)
+void sys_sem_signal(sys_sem_t *sem) 
 {
-    INT8U     ucErr;
-    ucErr = OSSemPost(sem->sem);
- 
-    /* It may happen that a connection is already reset and the semaphore is deleted
-       if this function is called. Therefore ASSERTION should not be called */   
-    //LWIP_ASSERT( "OSSemPost ", ucErr == OS_NO_ERR );
+    OSSemPost(sem->sem); 
 }
 
 /*-----------------------------------------------------------------------------------*/
-void sys_sem_free(sys_sem_t *sem)
+void sys_sem_free (sys_sem_t *sem)
 {
     INT8U     ucErr;
     
-    OSSemDel(sem->sem, OS_DEL_NO_PEND, &ucErr ); 
-    LWIP_ASSERT( "OSSemDel ", ucErr == OS_NO_ERR );
+    OSSemDel(sem->sem, OS_DEL_NO_PEND, &ucErr); 
+    LWIP_ASSERT("OSSemDel ", ucErr == OS_NO_ERR);
 }
 
 int sys_sem_valid(sys_sem_t *sem)

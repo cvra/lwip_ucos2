@@ -52,9 +52,10 @@ typedef intptr_t mem_ptr_t;
 /* XXX Do something useful .*/
 #define panic(s) {printf("%s:%d : %s", __FILE__, __LINE__, (s));while(1);}
 
-/* Plaform specific diagnostic output */
+/* Non-fatal, prints a message. Uses printf formatting. */
 #define LWIP_PLATFORM_DIAG(x)   {printf x;}
 
+/* Fatal, print message and abandon execution. Uses printf formating. The panic() function never returns. */
 #define LWIP_PLATFORM_ASSERT(x)  { panic((x)); }
 
 #define SYS_ARCH_DECL_PROTECT(x) OS_CPU_SR cpu_sr

@@ -32,9 +32,13 @@
 #define SYS_SEM_NULL    NULL
 
 typedef struct {
+    /** The mail queue itself. */
     OS_EVENT*   pQ;
-    OS_EVENT*   Q_full;
+    /** The elements in the queue. */
     void*       pvQEntries[LWIP_Q_SIZE];
+    /** The semaphore used to count the number of available slots. */
+    OS_EVENT*   Q_full;
+    /** The validity flag. */
     int         is_valid;
 } sys_mbox_t;
 
