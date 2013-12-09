@@ -107,24 +107,25 @@ u32_t sys_arch_mbox_fetch(sys_mbox_t *mbox, void **msg, u32_t timeout)
 
     temp = OSQPend(mbox->pQ, ucos_timeout, &ucErr);
 
-    /* Tells tasks waiting because of a full buffer that the buffer is not full
-     * anymore. */
-    /* XXX should this be placed after timeout detection ?*/
-    OSSemPost(mbox->Q_full);
-
-    if(msg) {
-        *msg = temp;
-    }
     
     if(ucErr == OS_TIMEOUT) {
         timeout = SYS_ARCH_TIMEOUT;
     } else {
         LWIP_ASSERT("OSQPend ", ucErr == OS_NO_ERR);
+
+        /* Tells tasks waiting because of a full buffer that the buffer is not full
+         * anymore. */
+        OSSemPost(mbox->Q_full);
+
+        /* If there is a destination pointer, store the message in it. */
+        if(msg) {
+            *msg = temp;
+        }
+
         /* Calculate time we waited for the message to arrive. */      
         /* XXX: we cheat and just pretend that we waited for long! */
         timeout = 1;
     }
-
     return timeout;
 }
 
