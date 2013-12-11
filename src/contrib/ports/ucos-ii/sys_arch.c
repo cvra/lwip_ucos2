@@ -260,3 +260,7 @@ u32_t sys_now(void)
 {
     return (1000/OS_TICKS_PER_SEC)*OSTimeGet();
 }
+
+u32_t sys_jiffies(void) { 
+    return OSTimeGet();
+}
