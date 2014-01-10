@@ -1,0 +1,15 @@
+language: c
+compiler:
+  - gcc
+  - clang
+
+install: 
+    - git clone https://github.com/antoinealb/lwip_test.git ../lwip_test
+    
+before_script:
+  - cd ../lwip_test
+  - mkdir build
+  - cd build
+  - cmake ..
+
+script: make
