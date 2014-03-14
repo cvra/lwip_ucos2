@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 /**************************************************************************
 *                                                                         *
 *   PROJECT     : uCOS_LWIP (uC/OS LwIP port)                             *
@@ -26,8 +27,8 @@
 /* Module configuration */
 
 #define LWIP_MAX_TASKS  4          /* Number of LwIP tasks */
-#define LWIP_STACK_SIZE 512 //4K     /* Stack size for LwIP tasks */
-/* Note: 
+#define LWIP_STACK_SIZE 4096       /* Stack size for LwIP tasks */
+/* Note:
    Task priorities, LWIP_START_PRIO through (LWIP_START_PRIO+LWIP_MAX_TASKS-1) must be reserved
    for LwIP and must not used by other applications outside. */
 
@@ -44,4 +45,3 @@
 
 
 #endif /* __SYS_ARCH_OPTS_H__ */
-
