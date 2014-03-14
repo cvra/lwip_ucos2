@@ -723,7 +723,7 @@ nd6_tmr(void)
         /* Try to get an address on this netif that is invalid.
          * Skip 0 index (link-local address) */
         for (j = 1; j < LWIP_IPV6_NUM_ADDRESSES; j++) {
-          if (netif_ip6_addr_state(prefix_list[i].netif, j) == IP6_ADDRESS_STATE_INVALID) {
+          if (netif_ip6_addr_state(prefix_list[i].netif, j) == IP6_ADDR_INVALID) {
             /* Generate an address using this prefix and interface ID from link-local address. */
             prefix_list[i].netif->ip6_addr[j].addr[0] = prefix_list[i].prefix.addr[0];
             prefix_list[i].netif->ip6_addr[j].addr[1] = prefix_list[i].prefix.addr[1];
@@ -838,8 +838,10 @@ nd6_send_ns(struct netif * netif, ip6_addr_t * target_addr, u8_t flags)
     target_addr = &multicast_address;
   }
 
+#if CHECKSUM_GEN_ICMP6
   ns_hdr->chksum = ip6_chksum_pseudo(p, IP6_NEXTH_ICMP6, p->len, src_addr,
     target_addr);
+#endif /* CHECKSUM_GEN_ICMP6 */
 
   /* Send the packet out. */
   ND6_STATS_INC(nd6.xmit);
@@ -910,8 +912,10 @@ nd6_send_na(struct netif * netif, ip6_addr_t * target_addr, u8_t flags)
     dest_addr = ip6_current_src_addr();
   }
 
+#if CHECKSUM_GEN_ICMP6
   na_hdr->chksum = ip6_chksum_pseudo(p, IP6_NEXTH_ICMP6, p->len, src_addr,
     dest_addr);
+#endif /* CHECKSUM_GEN_ICMP6 */
 
   /* Send the packet out. */
   ND6_STATS_INC(nd6.xmit);
@@ -977,8 +981,10 @@ nd6_send_rs(struct netif * netif)
     SMEMCPY(lladdr_opt->addr, netif->hwaddr, netif->hwaddr_len);
   }
 
+#if CHECKSUM_GEN_ICMP6
   rs_hdr->chksum = ip6_chksum_pseudo(p, IP6_NEXTH_ICMP6, p->len, src_addr,
     &multicast_address);
+#endif /* CHECKSUM_GEN_ICMP6 */
 
   /* Send the packet out. */
   ND6_STATS_INC(nd6.xmit);

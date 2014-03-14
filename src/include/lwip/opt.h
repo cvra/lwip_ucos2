@@ -92,6 +92,16 @@
 #define SMEMCPY(dst,src,len)            memcpy(dst,src,len)
 #endif
 
+/**
+ * LWIP_MPU_COMPATIBLE: enables special memory management mechanism
+ * which makes lwip able to work on MPU (Memory Protection Unit) system
+ * by not passing stack-pointers to other threads
+ * (this decreases performance)
+ */
+#ifndef LWIP_MPU_COMPATIBLE
+#define LWIP_MPU_COMPATIBLE             0
+#endif
+
 /*
    ------------------------------------
    ---------- Memory options ----------
@@ -414,6 +424,33 @@
 #define PBUF_POOL_SIZE                  16
 #endif
 
+/** MEMP_NUM_API_MSG: the number of concurrently active calls to various
+ * socket, netconn, and tcpip functions
+ */
+#ifndef MEMP_NUM_API_MSG
+#define MEMP_NUM_API_MSG                MEMP_NUM_TCPIP_MSG_API
+#endif
+
+/** MEMP_NUM_DNS_API_MSG: the number of concurrently active calls to netconn_gethostbyname
+ */
+#ifndef MEMP_NUM_DNS_API_MSG
+#define MEMP_NUM_DNS_API_MSG            MEMP_NUM_TCPIP_MSG_API
+#endif
+
+/** MEMP_NUM_SOCKET_SETGETSOCKOPT_DATA: the number of concurrently active calls
+ * to getsockopt/setsockopt
+ */
+#ifndef MEMP_NUM_SOCKET_SETGETSOCKOPT_DATA
+#define MEMP_NUM_SOCKET_SETGETSOCKOPT_DATA MEMP_NUM_TCPIP_MSG_API
+#endif
+
+/** MEMP_NUM_NETIFAPI_MSG: the number of concurrently active calls to the
+ * netifapi functions
+ */
+#ifndef MEMP_NUM_NETIFAPI_MSG
+#define MEMP_NUM_NETIFAPI_MSG           MEMP_NUM_TCPIP_MSG_API
+#endif
+
 /*
    ---------------------------------
    ---------- ARP options ----------
@@ -444,6 +481,14 @@
 #define ARP_QUEUEING                    0
 #endif
 
+/** The maximum number of packets which may be queued for each
+ *  unresolved address by other network layers. Defaults to 3, 0 means disabled.
+ *  Old packets are dropped, new packets are queued.
+ */ 
+#ifndef ARP_QUEUE_LEN
+#define ARP_QUEUE_LEN 3
+#endif
+
 /**
  * ETHARP_TRUST_IP_MAC==1: Incoming IP packets cause the ARP table to be
  * updated with the source MAC and IP addresses supplied in the packet.
@@ -459,7 +504,9 @@
 #endif
 
 /**
- * ETHARP_SUPPORT_VLAN==1: support receiving ethernet packets with VLAN header.
+ * ETHARP_SUPPORT_VLAN==1: support receiving and sending ethernet packets with
+ * VLAN header. See the description of LWIP_HOOK_VLAN_CHECK and
+ * LWIP_HOOK_VLAN_SET hooks to check/set VLAN headers.
  * Additionally, you can define ETHARP_VLAN_CHECK to an u16_t VLAN ID to check.
  * If ETHARP_VLAN_CHECK is defined, only VLAN-traffic for this VLAN is accepted.
  * If ETHARP_VLAN_CHECK is not defined, all traffic is accepted.
@@ -1055,6 +1102,9 @@
 
 /**
  * LWIP_TCP_TIMESTAMPS==1: support the TCP timestamp option.
+ * The timestamp option is currently only used to help remote hosts, it is not
+ * really used locally. Therefore, it is only enabled when a TS option is
+ * received in the initial SYN packet from a remote host.
  */
 #ifndef LWIP_TCP_TIMESTAMPS
 #define LWIP_TCP_TIMESTAMPS             0
@@ -1080,6 +1130,19 @@
 #define LWIP_CALLBACK_API               1
 #endif
 
+/**
+ * LWIP_WND_SCALE and TCP_RCV_SCALE:
+ * Set LWIP_WND_SCALE to 1 to enable window scaling.
+ * Set TCP_RCV_SCALE to the desired scaling factor (shift count in the
+ * range of [0..14]).
+ * When LWIP_WND_SCALE is enabled but TCP_RCV_SCALE is 0, we can use a large
+ * send window while having a small receive window only.
+ */
+#ifndef LWIP_WND_SCALE
+#define LWIP_WND_SCALE                  0
+#define TCP_RCV_SCALE                   0
+#endif
+
 
 /*
    ----------------------------------
@@ -1092,7 +1155,11 @@
  * Ethernet.
  */
 #ifndef PBUF_LINK_HLEN
+#ifdef LWIP_HOOK_VLAN_SET
+#define PBUF_LINK_HLEN                  (18 + ETH_PAD_SIZE)
+#else /* LWIP_HOOK_VLAN_SET */
 #define PBUF_LINK_HLEN                  (14 + ETH_PAD_SIZE)
+#endif /* LWIP_HOOK_VLAN_SET */
 #endif
 
 /**
@@ -1211,7 +1278,7 @@
    ------------------------------------
 */
 /**
- * LWIP_HAVE_LOOPIF==1: Support loop interface (127.0.0.1) and loopif.c
+ * LWIP_HAVE_LOOPIF==1: Support loop interface (127.0.0.1)
  */
 #ifndef LWIP_HAVE_LOOPIF
 #define LWIP_HAVE_LOOPIF                0
@@ -1424,6 +1491,13 @@
  */
 #ifndef LWIP_SOCKET
 #define LWIP_SOCKET                     1
+#endif
+
+/* LWIP_SOCKET_SET_ERRNO==1: Set errno when socket functions cannot complete
+ * successfully, as required by POSIX. Default is POSIX-compliant.
+ */
+#ifndef LWIP_SOCKET_SET_ERRNO
+#define LWIP_SOCKET_SET_ERRNO           1
 #endif
 
 /**
@@ -1649,6 +1723,7 @@
 #else
 
 #define LINK_STATS                      0
+#define ETHARP_STATS                    0
 #define IP_STATS                        0
 #define IPFRAG_STATS                    0
 #define ICMP_STATS                      0
@@ -1865,6 +1940,13 @@
 #endif
  
 /**
+ * CHECKSUM_GEN_ICMP6==1: Generate checksums in software for outgoing ICMP6 packets.
+ */
+#ifndef CHECKSUM_GEN_ICMP6
+#define CHECKSUM_GEN_ICMP6              1
+#endif
+ 
+/**
  * CHECKSUM_CHECK_IP==1: Check checksums in software for incoming IP packets.
  */
 #ifndef CHECKSUM_CHECK_IP
@@ -1883,6 +1965,20 @@
  */
 #ifndef CHECKSUM_CHECK_TCP
 #define CHECKSUM_CHECK_TCP              1
+#endif
+
+/**
+ * CHECKSUM_CHECK_ICMP==1: Check checksums in software for incoming ICMP packets.
+ */
+#ifndef CHECKSUM_CHECK_ICMP
+#define CHECKSUM_CHECK_ICMP             1
+#endif
+
+/**
+ * CHECKSUM_CHECK_ICMP6==1: Check checksums in software for incoming ICMPv6 packets
+ */
+#ifndef CHECKSUM_CHECK_ICMP6
+#define CHECKSUM_CHECK_ICMP6            1
 #endif
 
 /**
@@ -1939,13 +2035,6 @@
  */
 #ifndef LWIP_ICMP6_HL
 #define LWIP_ICMP6_HL                   255
-#endif
-
-/**
- * LWIP_ICMP6_CHECKSUM_CHECK==1: verify checksum on ICMPv6 packets
- */
-#ifndef LWIP_ICMP6_CHECKSUM_CHECK
-#define LWIP_ICMP6_CHECKSUM_CHECK       1
 #endif
 
 /**
@@ -2144,6 +2233,29 @@
  * - dest: destination IPv4 address
  * Returns the destination netif or NULL if no destination netif is found. In
  * that case, ip_route() continues as normal.
+ */
+
+/**
+ * LWIP_HOOK_VLAN_CHECK(netif, eth_hdr, vlan_hdr):
+ * - called from ethernet_input() if VLAN support is enabled
+ * - netif: struct netif on which the packet has been received
+ * - eth_hdr: struct eth_hdr of the packet
+ * - vlan_hdr: struct eth_vlan_hdr of the packet
+ * Return values:
+ * - 0: Packet must be dropped.
+ * - != 0: Packet must be accepted.
+ */
+
+/**
+ * LWIP_HOOK_VLAN_SET(netif, eth_hdr, vlan_hdr):
+ * - called from etharp_raw() and etharp_send_ip() if VLAN support is enabled
+ * - netif: struct netif that the packet will be sent through
+ * - eth_hdr: struct eth_hdr of the packet
+ * - vlan_hdr: struct eth_vlan_hdr of the packet
+ * Return values:
+ * - 0: Packet shall not contain VLAN header.
+ * - != 0: Packet shall contain VLAN header.
+ * Hook can be used to set prio_vid field of vlan_hdr.
  */
 
 /*

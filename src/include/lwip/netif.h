@@ -123,7 +123,7 @@ typedef err_t (*netif_output_fn)(struct netif *netif, struct pbuf *p,
        ip_addr_t *ipaddr);
 #if LWIP_IPV6
 /** Function prototype for netif->output_ip6 functions. Called by lwIP when a packet
- * shall be sent. For ethernet netif, set this to 'nd_output' and set
+ * shall be sent. For ethernet netif, set this to 'ethip6_output' and set
  * 'linkoutput'.
  *
  * @param netif The netif which shall send a packet
@@ -359,7 +359,7 @@ void netif_set_link_callback(struct netif *netif, netif_status_callback_fn link_
 #endif /* LWIP_IGMP */
 
 #if ENABLE_LOOPBACK
-err_t netif_loop_output(struct netif *netif, struct pbuf *p, ip_addr_t *dest_ip);
+err_t netif_loop_output(struct netif *netif, struct pbuf *p);
 void netif_poll(struct netif *netif);
 #if !LWIP_NETIF_LOOPBACK_MULTITHREADING
 void netif_poll_all(void);
@@ -370,7 +370,7 @@ void netif_poll_all(void);
 #define netif_ip6_addr(netif, i)  (&((netif)->ip6_addr[(i)]))
 #define netif_ip6_addr_state(netif, i)  ((netif)->ip6_addr_state[(i)])
 #define netif_ip6_addr_set_state(netif, i, state)  ((netif)->ip6_addr_state[(i)] = (state))
-s8_t netif_matches_ip6_addr(struct netif * netif, ip6_addr_t * ip6addr);
+s8_t netif_get_ip6_addr_match(struct netif * netif, ip6_addr_t * ip6addr);
 void netif_create_ip6_linklocal_address(struct netif * netif, u8_t from_mac_48bit);
 #endif /* LWIP_IPV6 */
 

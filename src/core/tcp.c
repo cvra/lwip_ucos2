@@ -625,8 +625,10 @@ u32_t tcp_update_rcv_ann_wnd(struct tcp_pcb *pcb)
     } else {
       /* keep the right edge of window constant */
       u32_t new_rcv_ann_wnd = pcb->rcv_ann_right_edge - pcb->rcv_nxt;
+#if !LWIP_WND_SCALE
       LWIP_ASSERT("new_rcv_ann_wnd <= 0xffff", new_rcv_ann_wnd <= 0xffff);
-      pcb->rcv_ann_wnd = (u16_t)new_rcv_ann_wnd;
+#endif
+      pcb->rcv_ann_wnd = (tcpwnd_size_t)new_rcv_ann_wnd;
     }
     return 0;
   }
@@ -649,7 +651,7 @@ tcp_recved(struct tcp_pcb *pcb, u16_t len)
   LWIP_ASSERT("don't call tcp_recved for listen-pcbs",
     pcb->state != LISTEN);
   LWIP_ASSERT("tcp_recved: len would wrap rcv_wnd\n",
-              len <= 0xffff - pcb->rcv_wnd );
+              len <= TCPWND_MAX - pcb->rcv_wnd);
 
   pcb->rcv_wnd += len;
   if (pcb->rcv_wnd > TCP_WND) {
@@ -824,7 +826,7 @@ void
 tcp_slowtmr(void)
 {
   struct tcp_pcb *pcb, *prev;
-  u16_t eff_wnd;
+  tcpwnd_size_t eff_wnd;
   u8_t pcb_remove;      /* flag if a PCB should be removed */
   u8_t pcb_reset;       /* flag if a RST should be sent when removing */
   err_t err;
@@ -899,14 +901,14 @@ tcp_slowtmr_start:
           /* Reduce congestion window and ssthresh. */
           eff_wnd = LWIP_MIN(pcb->cwnd, pcb->snd_wnd);
           pcb->ssthresh = eff_wnd >> 1;
-          if (pcb->ssthresh < (pcb->mss << 1)) {
+          if (pcb->ssthresh < (tcpwnd_size_t)(pcb->mss << 1)) {
             pcb->ssthresh = (pcb->mss << 1);
           }
           pcb->cwnd = pcb->mss;
-          LWIP_DEBUGF(TCP_CWND_DEBUG, ("tcp_slowtmr: cwnd %"U16_F
-                                       " ssthresh %"U16_F"\n",
+          LWIP_DEBUGF(TCP_CWND_DEBUG, ("tcp_slowtmr: cwnd %"TCPWNDSIZE_F
+                                       " ssthresh %"TCPWNDSIZE_F"\n",
                                        pcb->cwnd, pcb->ssthresh));
- 
+
           /* The following needs to be called AFTER cwnd is set to one
              mss - STJ */
           tcp_rexmit_rto(pcb);
@@ -1112,6 +1114,8 @@ tcp_fasttmr_start:
         }
       }
       pcb = next;
+    } else {
+      pcb = pcb->next;
     }
   }
 }
@@ -1120,37 +1124,58 @@ tcp_fasttmr_start:
 err_t
 tcp_process_refused_data(struct tcp_pcb *pcb)
 {
-  err_t err;
-  u8_t refused_flags = pcb->refused_data->flags;
-  /* set pcb->refused_data to NULL in case the callback frees it and then
-     closes the pcb */
-  struct pbuf *refused_data = pcb->refused_data;
-  pcb->refused_data = NULL;
-  /* Notify again application with data previously received. */
-  LWIP_DEBUGF(TCP_INPUT_DEBUG, ("tcp_input: notify kept packet\n"));
-  TCP_EVENT_RECV(pcb, refused_data, ERR_OK, err);
-  if (err == ERR_OK) {
-    /* did refused_data include a FIN? */
-    if (refused_flags & PBUF_FLAG_TCP_FIN) {
-      /* correct rcv_wnd as the application won't call tcp_recved()
-         for the FIN's seqno */
-      if (pcb->rcv_wnd != TCP_WND) {
-        pcb->rcv_wnd++;
+#if TCP_QUEUE_OOSEQ && LWIP_WND_SCALE
+  struct pbuf *rest;
+  while (pcb->refused_data != NULL)
+#endif /* TCP_QUEUE_OOSEQ && LWIP_WND_SCALE */
+  {
+    err_t err;
+    u8_t refused_flags = pcb->refused_data->flags;
+    /* set pcb->refused_data to NULL in case the callback frees it and then
+       closes the pcb */
+    struct pbuf *refused_data = pcb->refused_data;
+#if TCP_QUEUE_OOSEQ && LWIP_WND_SCALE
+    pbuf_split_64k(refused_data, &rest);
+    pcb->refused_data = rest;
+#else /* TCP_QUEUE_OOSEQ && LWIP_WND_SCALE */
+    pcb->refused_data = NULL;
+#endif /* TCP_QUEUE_OOSEQ && LWIP_WND_SCALE */
+    /* Notify again application with data previously received. */
+    LWIP_DEBUGF(TCP_INPUT_DEBUG, ("tcp_input: notify kept packet\n"));
+    TCP_EVENT_RECV(pcb, refused_data, ERR_OK, err);
+    if (err == ERR_OK) {
+      /* did refused_data include a FIN? */
+      if (refused_flags & PBUF_FLAG_TCP_FIN
+#if TCP_QUEUE_OOSEQ && LWIP_WND_SCALE
+          && (rest == NULL)
+#endif /* TCP_QUEUE_OOSEQ && LWIP_WND_SCALE */
+         ) {
+        /* correct rcv_wnd as the application won't call tcp_recved()
+           for the FIN's seqno */
+        if (pcb->rcv_wnd != TCP_WND) {
+          pcb->rcv_wnd++;
+        }
+        TCP_EVENT_CLOSED(pcb, err);
+        if (err == ERR_ABRT) {
+          return ERR_ABRT;
+        }
       }
-      TCP_EVENT_CLOSED(pcb, err);
-      if (err == ERR_ABRT) {
-        return ERR_ABRT;
+    } else if (err == ERR_ABRT) {
+      /* if err == ERR_ABRT, 'pcb' is already deallocated */
+      /* Drop incoming packets because pcb is "full" (only if the incoming
+         segment contains data). */
+      LWIP_DEBUGF(TCP_INPUT_DEBUG, ("tcp_input: drop incoming packets, because pcb is \"full\"\n"));
+      return ERR_ABRT;
+    } else {
+      /* data is still refused, pbuf is still valid (go on for ACK-only packets) */
+#if TCP_QUEUE_OOSEQ && LWIP_WND_SCALE
+      if (rest != NULL) {
+        pbuf_cat(refused_data, rest);
       }
+#endif /* TCP_QUEUE_OOSEQ && LWIP_WND_SCALE */
+      pcb->refused_data = refused_data;
+      return ERR_INPROGRESS;
     }
-  } else if (err == ERR_ABRT) {
-    /* if err == ERR_ABRT, 'pcb' is already deallocated */
-    /* Drop incoming packets because pcb is "full" (only if the incoming
-       segment contains data). */
-    LWIP_DEBUGF(TCP_INPUT_DEBUG, ("tcp_input: drop incoming packets, because pcb is \"full\"\n"));
-    return ERR_ABRT;
-  } else {
-    /* data is still refused, pbuf is still valid (go on for ACK-only packets) */
-    pcb->refused_data = refused_data;
   }
   return ERR_OK;
 }
@@ -1346,6 +1371,11 @@ tcp_alloc(u8_t prio)
     pcb->snd_queuelen = 0;
     pcb->rcv_wnd = TCP_WND;
     pcb->rcv_ann_wnd = TCP_WND;
+#if LWIP_WND_SCALE
+    /* snd_scale and rcv_scale are zero unless both sides agree to use scaling */
+    pcb->snd_scale = 0;
+    pcb->rcv_scale = 0;
+#endif
     pcb->tos = 0;
     pcb->ttl = TCP_TTL;
     /* As initial send MSS, we use TCP_MSS but limit it to 536.

@@ -98,9 +98,9 @@ struct snmp_obj_id
 };
 
 /* system */
-void snmp_set_sysdesr(u8_t* str, u8_t* len);
-void snmp_set_sysobjid(struct snmp_obj_id *oid);
-void snmp_get_sysobjid_ptr(struct snmp_obj_id **oid);
+void snmp_set_sysdescr(const u8_t* str, const u8_t* len);
+void snmp_set_sysobjid(const struct snmp_obj_id *oid);
+void snmp_get_sysobjid_ptr(const struct snmp_obj_id **oid);
 void snmp_inc_sysuptime(void);
 void snmp_add_sysuptime(u32_t value);
 void snmp_get_sysuptime(u32_t *value);
@@ -231,7 +231,7 @@ void snmp_get_snmpenableauthentraps(u8_t *value);
 #else
 
 /* system */
-#define snmp_set_sysdesr(str, len)
+#define snmp_set_sysdescr(str, len)
 #define snmp_set_sysobjid(oid);
 #define snmp_get_sysobjid_ptr(oid)
 #define snmp_inc_sysuptime()

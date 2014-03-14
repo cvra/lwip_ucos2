@@ -6,6 +6,22 @@ HISTORY
 
  ++ New features:
 
+  2013-04-20: Fatih Asici
+  * opt.h, etharp.h/.c: patch #7993: Added support for transmitting packets
+    with VLAN headers via hook function LWIP_HOOK_VLAN_SET and to check them
+    via hook function LWIP_HOOK_VLAN_CHECK
+
+  2014-02-20: Simon Goldschmidt (based on patch by Artem Pisarenko)
+  * patch #7885: modification of api modules to support FreeRTOS-MPU
+    (don't pass stack-pointers to other threads)
+
+  2014-02-05: Simon Goldschmidt (patch by "xtian" and "alex_ab")
+  * patch #6537/#7858: TCP window scaling support
+
+  2014-01-17: Jiri Engelthaler
+  * icmp, icmp6, opt.h: patch #8027: Completed HW checksuming for IPv4 and
+    IPv6 ICMP's
+
   2012-03-25: Simon Goldschmidt (idea by Mason)
   * posix/*: added posix-compatibility include files posix/netdb.h and posix/sys/socket.h
     which are a simple wrapper to the correct lwIP include files.
@@ -79,6 +95,90 @@ HISTORY
 
 
  ++ Bugfixes:
+
+  2014-03-11: Simon Goldschmidt (patch by Mason)
+  * opt.h, sockets.c: fixed bug #35928 BSD sockets functions must set errno for
+    POSIX-compliance
+
+  2014-02-27: Simon Goldschmidt
+  * dhcp.c: fixed bug #40303 DHCP xid renewed when sending a DHCPREQUEST
+
+  2014-02-27: Simon Goldschmidt
+  * raw.c: fixed bug #41680 raw socket can not receive IPv6 packet when
+    IP_SOF_BROADCAST_RECV==1
+
+  2014-02-27: Simon Goldschmidt
+  * api_msg.c, sockets.c: fixed bug #38404 getpeeraddr returns success on
+    unconnected/listening TCP sockets
+
+  2014-02-27: Simon Goldschmidt
+  * sockets.c: fixed bug #41729 Some socket functions return Exyz instead of -1
+
+  2014-02-25: Simon Goldschmidt
+  * ip4.c: fixed bug #39514 ip_route() may return an IPv6-only interface
+
+  2014-02-25: Simon Goldschmidt, patch by Fatih Asici
+  * pbuf.c: fixed bug #39356 Wrong increment in pbuf_memfind()
+
+  2014-02-25: Simon Goldschmidt
+  * netif.c/.h, udp.c: fixed bug #39225 udp.c uses netif_matches_ip6_addr() incorrectly;
+    renamed function netif_matches_ip6_addr() to netif_get_ip6_addr_match()
+
+  2014-02-25: Simon Goldschmidt
+  * igmp.c: fixed bug #39145 IGMP membership report for 224.0.0.1
+
+  2014-02-22: Simon Goldschmidt (patch by Amir Shalem)
+  * etharp.c, opt.h: fixed bug #34681 Limit ARP queue length by ARP_QUEUE_LEN (=3)
+
+  2014-02-22: Simon Goldschmidt (patch by Amir Shalem)
+  * etharp.h/.c: fixed bug #34682 Limit ARP request flood for unresolved entry
+
+  2014-02-20: Simon Goldschmidt
+  * tcp_out.c: fixed bug #39683 Assertion "seg->tcphdr not aligned" failed with
+    MEM_ALIGNMENT = 8
+
+  2014-02-20: Simon Goldschmidt
+  * sockets.c: fixed bug #39882 No function shall set errno to 0
+
+  2014-02-20: Simon Goldschmidt
+  * mib_structs.c: fixed bug #40050 SNMP problem with MIB arrays > 255
+
+  2014-02-20: Simon Goldschmidt
+  * api.h, sockets.c: fixed bug #41499 netconn::recv_avail can overflow
+
+  2014-01-08: Stathis Voukelatos
+  * memp_std.h: patch #7928 Fixed size calculation in MALLOC memory pool
+    creation macro
+
+  2014-01-18: Brian Fahs
+  * tcp_out.c: patch #8237: tcp_rexmit_rto fails to update pcb->unsent_oversize
+    when necessary
+
+  2014-01-17: Grant Erickson, Jay Logue, Simon Goldschmidt
+  * ipv6.c, netif.c: patch #7913 Enable Support for IPv6 Loopback
+
+  2014-01-16: Stathis Voukelatos
+  * netif.c: patch #7902 Fixed netif_poll() operation when LWIP_LOOPBACK_MAX_PBUFS > 0
+
+  2014-01-14: "Freddie Chopin"
+  * snmp.h, mib2.c: fixed constness and spelling of sysdescr
+
+  2014-01-14: Simon Goldschmidt (patch by Thomas Faber)
+  * tcpip.c: patch #8241: Fix implicit declaration of ip_input with
+    LWIP_TCPIP_CORE_LOCKING_INPUT disabled
+
+  2014-01-14: chrysn
+  * timers.c: patch #8244 make timeouts usable reliably from outside of the
+    timeout routine
+
+  2014-01-10: Simon Goldschmidt
+  * ip_frag.c, ip6_frag.c: fixed bug #41041 Potential use-after-free in IPv6 reassembly
+
+  2014-01-10: Simon Goldschmidt
+  * memp.c: fixed bug #41188 Alignment error in memp_init() when MEMP_SEPARATE_POOLS==1
+
+  2014-01-10: Simon Goldschmidt
+  * tcp.c: fixed bug #39898 tcp_fasttmr() possible lock due to infinte queue process loop
 
   2013-06-29: Simon Goldschmidt
   * inet.h, sockets.h: partially fixed bug #37585: IPv6 compatibility (in socket structs)

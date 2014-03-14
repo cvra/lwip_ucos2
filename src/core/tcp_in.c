@@ -345,18 +345,43 @@ tcp_input(struct pbuf *p, struct netif *inp)
            called when new send buffer space is available, we call it
            now. */
         if (pcb->acked > 0) {
-          TCP_EVENT_SENT(pcb, pcb->acked, err);
-          if (err == ERR_ABRT) {
-            goto aborted;
+          u16_t acked;
+#if LWIP_WND_SCALE
+          /* pcb->acked is u32_t but the sent callback only takes a u16_t,
+             so we might have to call it multiple times. */
+          u32_t pcb_acked = pcb->acked;
+          while(pcb_acked > 0) {
+            acked = (u16_t)LWIP_MIN(pcb_acked, 0xffffu);
+            pcb_acked -= acked;
+#else
+          {
+            acked = pcb->acked;
+#endif
+            TCP_EVENT_SENT(pcb, (u16_t)acked, err);
+            if (err == ERR_ABRT) {
+              goto aborted;
+            }
           }
         }
 
+#if TCP_QUEUE_OOSEQ && LWIP_WND_SCALE
+        while (recv_data != NULL) {
+          struct pbuf *rest = NULL;
+          pbuf_split_64k(recv_data, &rest);
+#else /* TCP_QUEUE_OOSEQ && LWIP_WND_SCALE */
         if (recv_data != NULL) {
+#endif /* TCP_QUEUE_OOSEQ && LWIP_WND_SCALE */
+
           LWIP_ASSERT("pcb->refused_data == NULL", pcb->refused_data == NULL);
           if (pcb->flags & TF_RXCLOSED) {
             /* received data although already closed -> abort (send RST) to
                notify the remote host that not all data has been processed */
             pbuf_free(recv_data);
+#if TCP_QUEUE_OOSEQ && LWIP_WND_SCALE
+            if (rest != NULL) {
+              pbuf_free(rest);
+            }
+#endif /* TCP_QUEUE_OOSEQ && LWIP_WND_SCALE */
             tcp_abort(pcb);
             goto aborted;
           }
@@ -364,13 +389,29 @@ tcp_input(struct pbuf *p, struct netif *inp)
           /* Notify application that data has been received. */
           TCP_EVENT_RECV(pcb, recv_data, ERR_OK, err);
           if (err == ERR_ABRT) {
+#if TCP_QUEUE_OOSEQ && LWIP_WND_SCALE
+            if (rest != NULL) {
+              pbuf_free(rest);
+            }
+#endif /* TCP_QUEUE_OOSEQ && LWIP_WND_SCALE */
             goto aborted;
           }
 
           /* If the upper layer can't receive this data, store it */
           if (err != ERR_OK) {
+#if TCP_QUEUE_OOSEQ && LWIP_WND_SCALE
+            if (rest != NULL) {
+              pbuf_cat(recv_data, rest);
+            }
+#endif /* TCP_QUEUE_OOSEQ && LWIP_WND_SCALE */
             pcb->refused_data = recv_data;
             LWIP_DEBUGF(TCP_INPUT_DEBUG, ("tcp_input: keep incoming packet, because pcb is \"full\"\n"));
+#if TCP_QUEUE_OOSEQ && LWIP_WND_SCALE
+            break;
+          } else {
+            /* Upper layer received the data, go on with the rest if > 64K */
+            recv_data = rest;
+#endif /* TCP_QUEUE_OOSEQ && LWIP_WND_SCALE */
           }
         }
 
@@ -500,9 +541,6 @@ tcp_listen_input(struct tcp_pcb_listen *pcb)
     npcb->state = SYN_RCVD;
     npcb->rcv_nxt = seqno + 1;
     npcb->rcv_ann_right_edge = npcb->rcv_nxt;
-    npcb->snd_wnd = tcphdr->wnd;
-    npcb->snd_wnd_max = tcphdr->wnd;
-    npcb->ssthresh = npcb->snd_wnd;
     npcb->snd_wl1 = seqno - 1;/* initialise to seqno-1 to force window update */
     npcb->callback_arg = pcb->callback_arg;
 #if LWIP_CALLBACK_API
@@ -516,6 +554,10 @@ tcp_listen_input(struct tcp_pcb_listen *pcb)
 
     /* Parse any options in the SYN. */
     tcp_parseopt(npcb);
+    npcb->snd_wnd = SND_WND_SCALE(npcb, tcphdr->wnd);
+    npcb->snd_wnd_max = npcb->snd_wnd;
+    npcb->ssthresh = npcb->snd_wnd;
+
 #if TCP_CALCULATE_EFF_SEND_MSS
     npcb->mss = tcp_eff_send_mss(npcb->mss, &npcb->local_ip,
       &npcb->remote_ip, PCB_ISIPV6(npcb));
@@ -653,8 +695,8 @@ tcp_process(struct tcp_pcb *pcb)
       pcb->rcv_nxt = seqno + 1;
       pcb->rcv_ann_right_edge = pcb->rcv_nxt;
       pcb->lastack = ackno;
-      pcb->snd_wnd = tcphdr->wnd;
-      pcb->snd_wnd_max = tcphdr->wnd;
+      pcb->snd_wnd = SND_WND_SCALE(pcb, tcphdr->wnd);
+      pcb->snd_wnd_max = pcb->snd_wnd;
       pcb->snd_wl1 = seqno - 1; /* initialise to seqno - 1 to force window update */
       pcb->state = ESTABLISHED;
 
@@ -670,7 +712,7 @@ tcp_process(struct tcp_pcb *pcb)
       pcb->cwnd = ((pcb->cwnd == 1) ? (pcb->mss * 2) : pcb->mss);
       LWIP_ASSERT("pcb->snd_queuelen > 0", (pcb->snd_queuelen > 0));
       --pcb->snd_queuelen;
-      LWIP_DEBUGF(TCP_QLEN_DEBUG, ("tcp_process: SYN-SENT --queuelen %"U16_F"\n", (u16_t)pcb->snd_queuelen));
+      LWIP_DEBUGF(TCP_QLEN_DEBUG, ("tcp_process: SYN-SENT --queuelen %"TCPWNDSIZE_F"\n", (tcpwnd_size_t)pcb->snd_queuelen));
       rseg = pcb->unacked;
       pcb->unacked = rseg->next;
       tcp_seg_free(rseg);
@@ -703,7 +745,7 @@ tcp_process(struct tcp_pcb *pcb)
     if (flags & TCP_ACK) {
       /* expected ACK number? */
       if (TCP_SEQ_BETWEEN(ackno, pcb->lastack+1, pcb->snd_nxt)) {
-        u16_t old_cwnd;
+        tcpwnd_size_t old_cwnd;
         pcb->state = ESTABLISHED;
         LWIP_DEBUGF(TCP_DEBUG, ("TCP connection established %"U16_F" -> %"U16_F".\n", inseg.tcphdr->src, inseg.tcphdr->dest));
 #if LWIP_CALLBACK_API
@@ -889,11 +931,11 @@ tcp_receive(struct tcp_pcb *pcb)
     if (TCP_SEQ_LT(pcb->snd_wl1, seqno) ||
        (pcb->snd_wl1 == seqno && TCP_SEQ_LT(pcb->snd_wl2, ackno)) ||
        (pcb->snd_wl2 == ackno && tcphdr->wnd > pcb->snd_wnd)) {
-      pcb->snd_wnd = tcphdr->wnd;
+      pcb->snd_wnd = SND_WND_SCALE(pcb, tcphdr->wnd); 
       /* keep track of the biggest window announced by the remote host to calculate
          the maximum segment size */
-      if (pcb->snd_wnd_max < tcphdr->wnd) {
-        pcb->snd_wnd_max = tcphdr->wnd;
+      if (pcb->snd_wnd_max < pcb->snd_wnd) {
+        pcb->snd_wnd_max = pcb->snd_wnd; 
       }
       pcb->snd_wl1 = seqno;
       pcb->snd_wl2 = ackno;
@@ -957,7 +999,7 @@ tcp_receive(struct tcp_pcb *pcb)
               if (pcb->dupacks > 3) {
                 /* Inflate the congestion window, but not if it means that
                    the value overflows. */
-                if ((u16_t)(pcb->cwnd + pcb->mss) > pcb->cwnd) {
+                if ((tcpwnd_size_t)(pcb->cwnd + pcb->mss) > pcb->cwnd) {
                   pcb->cwnd += pcb->mss;
                 }
               } else if (pcb->dupacks == 3) {
@@ -990,8 +1032,9 @@ tcp_receive(struct tcp_pcb *pcb)
       /* Reset the retransmission time-out. */
       pcb->rto = (pcb->sa >> 3) + pcb->sv;
 
-      /* Update the send buffer space. Diff between the two can never exceed 64K? */
-      pcb->acked = (u16_t)(ackno - pcb->lastack);
+      /* Update the send buffer space. Diff between the two can never exceed 64K
+         unless window scaling is used. */
+      pcb->acked = (tcpwnd_size_t)(ackno - pcb->lastack);
 
       pcb->snd_buf += pcb->acked;
 
@@ -1003,16 +1046,16 @@ tcp_receive(struct tcp_pcb *pcb)
          ssthresh). */
       if (pcb->state >= ESTABLISHED) {
         if (pcb->cwnd < pcb->ssthresh) {
-          if ((u16_t)(pcb->cwnd + pcb->mss) > pcb->cwnd) {
+          if ((tcpwnd_size_t)(pcb->cwnd + pcb->mss) > pcb->cwnd) {
             pcb->cwnd += pcb->mss;
           }
-          LWIP_DEBUGF(TCP_CWND_DEBUG, ("tcp_receive: slow start cwnd %"U16_F"\n", pcb->cwnd));
+          LWIP_DEBUGF(TCP_CWND_DEBUG, ("tcp_receive: slow start cwnd %"TCPWNDSIZE_F"\n", pcb->cwnd));
         } else {
-          u16_t new_cwnd = (pcb->cwnd + pcb->mss * pcb->mss / pcb->cwnd);
+          tcpwnd_size_t new_cwnd = (pcb->cwnd + pcb->mss * pcb->mss / pcb->cwnd);
           if (new_cwnd > pcb->cwnd) {
             pcb->cwnd = new_cwnd;
           }
-          LWIP_DEBUGF(TCP_CWND_DEBUG, ("tcp_receive: congestion avoidance cwnd %"U16_F"\n", pcb->cwnd));
+          LWIP_DEBUGF(TCP_CWND_DEBUG, ("tcp_receive: congestion avoidance cwnd %"TCPWNDSIZE_F"\n", pcb->cwnd));
         }
       }
       LWIP_DEBUGF(TCP_INPUT_DEBUG, ("tcp_receive: ACK for %"U32_F", unacked->seqno %"U32_F":%"U32_F"\n",
@@ -1035,7 +1078,7 @@ tcp_receive(struct tcp_pcb *pcb)
         next = pcb->unacked;
         pcb->unacked = pcb->unacked->next;
 
-        LWIP_DEBUGF(TCP_QLEN_DEBUG, ("tcp_receive: queuelen %"U16_F" ... ", (u16_t)pcb->snd_queuelen));
+        LWIP_DEBUGF(TCP_QLEN_DEBUG, ("tcp_receive: queuelen %"TCPWNDSIZE_F" ... ", (tcpwnd_size_t)pcb->snd_queuelen));
         LWIP_ASSERT("pcb->snd_queuelen >= pbuf_clen(next->p)", (pcb->snd_queuelen >= pbuf_clen(next->p)));
         /* Prevent ACK for FIN to generate a sent event */
         if ((pcb->acked != 0) && ((TCPH_FLAGS(next->tcphdr) & TCP_FIN) != 0)) {
@@ -1045,7 +1088,7 @@ tcp_receive(struct tcp_pcb *pcb)
         pcb->snd_queuelen -= pbuf_clen(next->p);
         tcp_seg_free(next);
 
-        LWIP_DEBUGF(TCP_QLEN_DEBUG, ("%"U16_F" (after freeing unacked)\n", (u16_t)pcb->snd_queuelen));
+        LWIP_DEBUGF(TCP_QLEN_DEBUG, ("%"TCPWNDSIZE_F" (after freeing unacked)\n", (tcpwnd_size_t)pcb->snd_queuelen));
         if (pcb->snd_queuelen != 0) {
           LWIP_ASSERT("tcp_receive: valid queue length", pcb->unacked != NULL ||
                       pcb->unsent != NULL);
@@ -1054,10 +1097,11 @@ tcp_receive(struct tcp_pcb *pcb)
 
       /* If there's nothing left to acknowledge, stop the retransmit
          timer, otherwise reset it to start again */
-      if(pcb->unacked == NULL)
+      if (pcb->unacked == NULL) {
         pcb->rtime = -1;
-      else
+      } else {
         pcb->rtime = 0;
+      }
 
       pcb->polltmr = 0;
 
@@ -1092,7 +1136,7 @@ tcp_receive(struct tcp_pcb *pcb)
         pcb->unsent_oversize = 0;
       }
 #endif /* TCP_OVERSIZE */ 
-      LWIP_DEBUGF(TCP_QLEN_DEBUG, ("tcp_receive: queuelen %"U16_F" ... ", (u16_t)pcb->snd_queuelen));
+      LWIP_DEBUGF(TCP_QLEN_DEBUG, ("tcp_receive: queuelen %"TCPWNDSIZE_F" ... ", (tcpwnd_size_t)pcb->snd_queuelen));
       LWIP_ASSERT("pcb->snd_queuelen >= pbuf_clen(next->p)", (pcb->snd_queuelen >= pbuf_clen(next->p)));
       /* Prevent ACK for FIN to generate a sent event */
       if ((pcb->acked != 0) && ((TCPH_FLAGS(next->tcphdr) & TCP_FIN) != 0)) {
@@ -1100,7 +1144,7 @@ tcp_receive(struct tcp_pcb *pcb)
       }
       pcb->snd_queuelen -= pbuf_clen(next->p);
       tcp_seg_free(next);
-      LWIP_DEBUGF(TCP_QLEN_DEBUG, ("%"U16_F" (after freeing unsent)\n", (u16_t)pcb->snd_queuelen));
+      LWIP_DEBUGF(TCP_QLEN_DEBUG, ("%"TCPWNDSIZE_F" (after freeing unsent)\n", (tcpwnd_size_t)pcb->snd_queuelen));
       if (pcb->snd_queuelen != 0) {
         LWIP_ASSERT("tcp_receive: valid queue length",
           pcb->unacked != NULL || pcb->unsent != NULL);
@@ -1366,6 +1410,9 @@ tcp_receive(struct tcp_pcb *pcb)
           if (cseg->p->tot_len > 0) {
             /* Chain this pbuf onto the pbuf that we will pass to
                the application. */
+            /* With window scaling, this can overflow recv_data->tot_len, but
+               that's not a problem since we explicitly fix that before passing
+               recv_data to the application. */
             if (recv_data) {
               pbuf_cat(recv_data, cseg->p);
             } else {
@@ -1584,7 +1631,7 @@ tcp_parseopt(struct tcp_pcb *pcb)
   opts = (u8_t *)tcphdr + TCP_HLEN;
 
   /* Parse the TCP MSS option, if present. */
-  if(TCPH_HDRLEN(tcphdr) > 0x5) {
+  if (TCPH_HDRLEN(tcphdr) > 0x5) {
     max_c = (TCPH_HDRLEN(tcphdr) - 5) << 2;
     for (c = 0; c < max_c; ) {
       opt = opts[c];
@@ -1612,6 +1659,29 @@ tcp_parseopt(struct tcp_pcb *pcb)
         /* Advance to next option */
         c += 0x04;
         break;
+#if LWIP_WND_SCALE
+      case 0x03:
+        LWIP_DEBUGF(TCP_INPUT_DEBUG, ("tcp_parseopt: WND_SCALE\n"));
+        if (opts[c + 1] != 0x03 || c + 0x03 > max_c) {
+          /* Bad length */
+          LWIP_DEBUGF(TCP_INPUT_DEBUG, ("tcp_parseopt: bad length\n"));
+          return;
+        }
+        /* If syn was received with wnd scale option,
+           activate wnd scale opt */
+        if (flags & TCP_SYN) {
+          /* An WND_SCALE option with the right option length. */
+          pcb->snd_scale = opts[c + 2];
+          if (pcb->snd_scale > 14U) {
+            pcb->snd_scale = 14U;
+          }
+          pcb->rcv_scale = TCP_RCV_SCALE;
+          pcb->flags |= TF_WND_SCALE;
+        }
+        /* Advance to next option */
+        c += 0x03;
+        break;
+#endif
 #if LWIP_TCP_TIMESTAMPS
       case 0x08:
         LWIP_DEBUGF(TCP_INPUT_DEBUG, ("tcp_parseopt: TS\n"));
@@ -1621,10 +1691,12 @@ tcp_parseopt(struct tcp_pcb *pcb)
           return;
         }
         /* TCP timestamp option with valid length */
-        tsval = (opts[c+2]) | (opts[c+3] << 8) | 
+        tsval = (opts[c+2]) | (opts[c+3] << 8) |
           (opts[c+4] << 16) | (opts[c+5] << 24);
         if (flags & TCP_SYN) {
           pcb->ts_recent = ntohl(tsval);
+          /* Enable sending timestamps in every segment now that we know
+             the remote host supports it. */
           pcb->flags |= TF_TIMESTAMP;
         } else if (TCP_SEQ_BETWEEN(pcb->ts_lastacksent, seqno, seqno+tcplen)) {
           pcb->ts_recent = ntohl(tsval);

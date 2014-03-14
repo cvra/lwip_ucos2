@@ -326,16 +326,34 @@ sys_timeout(u32_t msecs, sys_timeout_handler handler, void *arg)
 #endif /* LWIP_DEBUG_TIMERNAMES */
 {
   struct sys_timeo *timeout, *t;
+#if NO_SYS
+  u32_t now, diff;
+#endif
 
   timeout = (struct sys_timeo *)memp_malloc(MEMP_SYS_TIMEOUT);
   if (timeout == NULL) {
     LWIP_ASSERT("sys_timeout: timeout != NULL, pool MEMP_SYS_TIMEOUT is empty", timeout != NULL);
     return;
   }
+
+#if NO_SYS
+  now = sys_now();
+  if (next_timeout == NULL) {
+    diff = 0;
+    timeouts_last_time = now;
+  } else {
+    diff = now - timeouts_last_time;
+  }
+#endif
+
   timeout->next = NULL;
   timeout->h = handler;
   timeout->arg = arg;
+#if NO_SYS
+  timeout->time = msecs + diff;
+#else
   timeout->time = msecs;
+#endif
 #if LWIP_DEBUG_TIMERNAMES
   timeout->handler_name = handler_name;
   LWIP_DEBUGF(TIMERS_DEBUG, ("sys_timeout: %p msecs=%"U32_F" handler=%s arg=%p\n",
@@ -368,10 +386,8 @@ sys_timeout(u32_t msecs, sys_timeout_handler handler, void *arg)
 
 /**
  * Go through timeout list (for this task only) and remove the first matching
- * entry, even though the timeout has not triggered yet.
- *
- * @note This function only works as expected if there is only one timeout
- * calling 'handler' in the list of timeouts.
+ * entry (subsequent entries remain untouched), even though the timeout has not
+ * triggered yet.
  *
  * @param handler callback function that would be called by the timeout
  * @param arg callback argument that would be passed to handler
@@ -437,7 +453,7 @@ sys_check_timeouts(void)
       if (tmptimeout && (tmptimeout->time <= diff)) {
         /* timeout has expired */
         had_one = 1;
-        timeouts_last_time = now;
+        timeouts_last_time += tmptimeout->time;
         diff -= tmptimeout->time;
         next_timeout = tmptimeout->next;
         handler = tmptimeout->h;

@@ -51,6 +51,7 @@
 #include "arch/perf.h"
 #include "lwip/ip6.h"
 #include "lwip/ip6_addr.h"
+#include "lwip/inet_chksum.h"
 
 #include <string.h>
 
@@ -81,18 +82,15 @@ raw_input(struct pbuf *p, struct netif *inp)
   struct ip_hdr *iphdr;
   s16_t proto;
   u8_t eaten = 0;
-#if LWIP_IPV6
-  struct ip6_hdr *ip6hdr;
-#endif /* LWIP_IPV6 */
-
 
   LWIP_UNUSED_ARG(inp);
 
   iphdr = (struct ip_hdr *)p->payload;
 #if LWIP_IPV6
   if (IPH_V(iphdr) == 6) {
-    ip6hdr = (struct ip6_hdr *)p->payload;
+    struct ip6_hdr *ip6hdr = (struct ip6_hdr *)p->payload;
     proto = IP6H_NEXTH(ip6hdr);
+    iphdr = NULL;
   }
   else
 #endif /* LWIP_IPV6 */
@@ -112,7 +110,7 @@ raw_input(struct pbuf *p, struct netif *inp)
       /* broadcast filter? */
       if ((ip_get_option(pcb, SOF_BROADCAST) || !ip_addr_isbroadcast(ip_current_dest_addr(), inp))
 #if LWIP_IPV6
-          && !PCB_ISIPV6(pcb)
+          || PCB_ISIPV6(pcb)
 #endif /* LWIP_IPV6 */
           )
 #endif /* IP_SOF_BROADCAST_RECV */
@@ -123,7 +121,14 @@ raw_input(struct pbuf *p, struct netif *inp)
           void* old_payload = p->payload;
 #endif
           /* the receive callback function did not eat the packet? */
-          eaten = pcb->recv.ip4(pcb->recv_arg, pcb, p, ip_current_src_addr());
+#if LWIP_IPV6
+          if (PCB_ISIPV6(pcb)) {
+            eaten = pcb->recv.ip6(pcb->recv_arg, pcb, p, ip6_current_src_addr());
+          } else
+#endif /* LWIP_IPV6 */
+          {
+            eaten = pcb->recv.ip4(pcb->recv_arg, pcb, p, ip_current_src_addr());
+          }
           if (eaten != 0) {
             /* receive function ate the packet */
             p = NULL;
@@ -281,7 +286,6 @@ raw_sendto(struct raw_pcb *pcb, struct pbuf *p, ip_addr_t *ipaddr)
 
 #if IP_SOF_BROADCAST
 #if LWIP_IPV6
-  /* @todo: why does IPv6 not filter broadcast with SOF_BROADCAST enabled? */
   if (!PCB_ISIPV6(pcb))
 #endif /* LWIP_IPV6 */
   {
@@ -312,6 +316,16 @@ raw_sendto(struct raw_pcb *pcb, struct pbuf *p, ip_addr_t *ipaddr)
     /* use RAW PCB local IP address as source address */
     src_ip = &pcb->local_ip;
   }
+
+#if LWIP_IPV6
+  /* If requested, based on the IPV6_CHECKSUM socket option per RFC3542,
+     compute the checksum and update the checksum in the payload. */
+  if (PCB_ISIPV6(pcb) && pcb->chksum_reqd) {
+    u16_t chksum = ip6_chksum_pseudo(p, pcb->protocol, p->tot_len, ipX_2_ip6(src_ip), ipX_2_ip6(dst_ip));
+    LWIP_ASSERT("Checksum must fit into first pbuf", p->len >= (pcb->chksum_offset + 2));
+    SMEMCPY(((u8_t *)p->payload) + pcb->chksum_offset, &chksum, sizeof(u16_t));
+  }
+#endif
 
   NETIF_SET_HWADDRHINT(netif, &pcb->addr_hint);
   err = ipX_output_if(PCB_ISIPV6(pcb), q, ipX_2_ip(src_ip), ipX_2_ip(dst_ip), pcb->ttl, pcb->tos, pcb->protocol, netif);

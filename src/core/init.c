@@ -73,9 +73,6 @@
 #if (!LWIP_UDP && LWIP_UDPLITE)
   #error "If you want to use UDP Lite, you have to define LWIP_UDP=1 in your lwipopts.h"
 #endif
-#if (!LWIP_UDP && LWIP_SNMP)
-  #error "If you want to use SNMP, you have to define LWIP_UDP=1 in your lwipopts.h"
-#endif
 #if (!LWIP_UDP && LWIP_DHCP)
   #error "If you want to use DHCP, you have to define LWIP_UDP=1 in your lwipopts.h"
 #endif
@@ -115,9 +112,24 @@
   #error "MEMP_NUM_REASSDATA > IP_REASS_MAX_PBUFS doesn't make sense since each struct ip_reassdata must hold 2 pbufs at least!"
 #endif
 #endif /* !MEMP_MEM_MALLOC */
-#if (LWIP_TCP && (TCP_WND > 0xffff))
-  #error "If you want to use TCP, TCP_WND must fit in an u16_t, so, you have to reduce it in your lwipopts.h"
+#if LWIP_WND_SCALE
+#if (LWIP_TCP && (TCP_WND > 0xffffffff))
+  #error "If you want to use TCP, TCP_WND must fit in an u32_t, so, you have to reduce it in your lwipopts.h"
 #endif
+#if (LWIP_TCP && LWIP_WND_SCALE > 14)
+  #error "The maximum valid window scale value is 14!"
+#endif
+#if (LWIP_TCP && (TCP_WND > (0xFFFFU << TCP_RCV_SCALE)))
+  #error "TCP_WND is bigger than the configured LWIP_WND_SCALE allows!"
+#endif
+#if (LWIP_TCP && ((TCP_WND >> TCP_RCV_SCALE) == 0))
+  #error "TCP_WND is too small for the configured LWIP_WND_SCALE (results in zero window)!"
+#endif
+#else /* LWIP_WND_SCALE */
+#if (LWIP_TCP && (TCP_WND > 0xffff))
+  #error "If you want to use TCP, TCP_WND must fit in an u16_t, so, you have to reduce it in your lwipopts.h (or enable window scaling)"
+#endif
+#endif /* LWIP_WND_SCALE */
 #if (LWIP_TCP && (TCP_SND_QUEUELEN > 0xffff))
   #error "If you want to use TCP, TCP_SND_QUEUELEN must fit in an u16_t, so, you have to reduce it in your lwipopts.h"
 #endif
@@ -127,7 +139,7 @@
 #if (LWIP_TCP && ((TCP_MAXRTX > 12) || (TCP_SYNMAXRTX > 12)))
   #error "If you want to use TCP, TCP_MAXRTX and TCP_SYNMAXRTX must less or equal to 12 (due to tcp_backoff table), so, you have to reduce them in your lwipopts.h"
 #endif
-#if (LWIP_TCP && TCP_LISTEN_BACKLOG && (TCP_DEFAULT_LISTEN_BACKLOG < 0) || (TCP_DEFAULT_LISTEN_BACKLOG > 0xff))
+#if (LWIP_TCP && TCP_LISTEN_BACKLOG && ((TCP_DEFAULT_LISTEN_BACKLOG < 0) || (TCP_DEFAULT_LISTEN_BACKLOG > 0xff)))
   #error "If you want to use TCP backlog, TCP_DEFAULT_LISTEN_BACKLOG must fit into an u8_t"
 #endif
 #if (LWIP_NETIF_API && (NO_SYS==1))
@@ -169,7 +181,7 @@
 #if (DNS_LOCAL_HOSTLIST && !DNS_LOCAL_HOSTLIST_IS_DYNAMIC && !(defined(DNS_LOCAL_HOSTLIST_INIT)))
   #error "you have to define define DNS_LOCAL_HOSTLIST_INIT {{'host1', 0x123}, {'host2', 0x234}} to initialize DNS_LOCAL_HOSTLIST"
 #endif
-#if PPP_SUPPORT && !PPPOS_SUPPORT & !PPPOE_SUPPORT
+#if PPP_SUPPORT && !PPPOS_SUPPORT && !PPPOE_SUPPORT
   #error "PPP_SUPPORT needs either PPPOS_SUPPORT or PPPOE_SUPPORT turned on"
 #endif
 #if !LWIP_ETHERNET && (LWIP_ARP || PPPOE_SUPPORT)
@@ -219,9 +231,6 @@
  */
 #ifdef MEMP_NUM_TCPIP_MSG
   #error "MEMP_NUM_TCPIP_MSG option is deprecated. Remove it from your lwipopts.h."
-#endif
-#ifdef MEMP_NUM_API_MSG
-  #error "MEMP_NUM_API_MSG option is deprecated. Remove it from your lwipopts.h."
 #endif
 #ifdef TCP_REXMIT_DEBUG
   #error "TCP_REXMIT_DEBUG option is deprecated. Remove it from your lwipopts.h."

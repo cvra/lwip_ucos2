@@ -12,7 +12,7 @@
 #ifndef LWIP_MALLOC_MEMPOOL
 /* This treats "malloc pools" just like any other pool.
    The pools are a little bigger to provide 'size' as the amount of user data. */
-#define LWIP_MALLOC_MEMPOOL(num, size) LWIP_MEMPOOL(POOL_##size, num, (size + sizeof(struct memp_malloc_helper)), "MALLOC_"#size)
+#define LWIP_MALLOC_MEMPOOL(num, size) LWIP_MEMPOOL(POOL_##size, num, (size + LWIP_MEM_ALIGN_SIZE(sizeof(struct memp_malloc_helper))), "MALLOC_"#size)
 #define LWIP_MALLOC_MEMPOOL_START
 #define LWIP_MALLOC_MEMPOOL_END
 #endif /* LWIP_MALLOC_MEMPOOL */ 
@@ -58,6 +58,18 @@ LWIP_MEMPOOL(NETCONN,        MEMP_NUM_NETCONN,         sizeof(struct netconn),  
 
 #if NO_SYS==0
 LWIP_MEMPOOL(TCPIP_MSG_API,  MEMP_NUM_TCPIP_MSG_API,   sizeof(struct tcpip_msg),      "TCPIP_MSG_API")
+#if LWIP_MPU_COMPATIBLE
+LWIP_MEMPOOL(API_MSG,        MEMP_NUM_API_MSG,         sizeof(struct api_msg),        "API_MSG")
+#if LWIP_DNS
+LWIP_MEMPOOL(DNS_API_MSG,    MEMP_NUM_DNS_API_MSG,     sizeof(struct dns_api_msg),    "DNS_API_MSG")
+#endif
+#if LWIP_SOCKET
+LWIP_MEMPOOL(SOCKET_SETGETSOCKOPT_DATA, MEMP_NUM_SOCKET_SETGETSOCKOPT_DATA, sizeof(struct lwip_setgetsockopt_data), "SOCKET_SETGETSOCKOPT_DATA")
+#endif
+#if LWIP_NETIF_API
+LWIP_MEMPOOL(NETIFAPI_MSG,   MEMP_NUM_NETIFAPI_MSG,    sizeof(struct netifapi_msg),   "NETIFAPI_MSG")
+#endif
+#endif /* LWIP_MPU_COMPATIBLE */
 #if !LWIP_TCPIP_CORE_LOCKING_INPUT
 LWIP_MEMPOOL(TCPIP_MSG_INPKT,MEMP_NUM_TCPIP_MSG_INPKT, sizeof(struct tcpip_msg),      "TCPIP_MSG_INPKT")
 #endif /* !LWIP_TCPIP_CORE_LOCKING_INPUT */

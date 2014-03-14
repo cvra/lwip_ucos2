@@ -123,7 +123,12 @@ ip_route(ip_addr_t *dest)
   /* iterate through netifs */
   for (netif = netif_list; netif != NULL; netif = netif->next) {
     /* network mask matches? */
-    if (netif_is_up(netif)) {
+    if ((netif_is_up(netif))
+#if LWIP_IPV6
+        /* prevent using IPv6-only interfaces */
+        && (!ip_addr_isany(&(netif->ip_addr)))
+#endif /* LWIP_IPV6 */ 
+        ) {
       if (ip_addr_netcmp(dest, &(netif->ip_addr), &(netif->netmask))) {
         /* return netif on which to forward IP packet */
         return netif;
@@ -772,11 +777,11 @@ err_t ip_output_if_opt(struct pbuf *p, ip_addr_t *src, ip_addr_t *dest,
   if (ip_addr_cmp(dest, &netif->ip_addr)) {
     /* Packet to self, enqueue it for loopback */
     LWIP_DEBUGF(IP_DEBUG, ("netif_loop_output()"));
-    return netif_loop_output(netif, p, dest);
+    return netif_loop_output(netif, p);
   }
 #if LWIP_IGMP
   if ((p->flags & PBUF_FLAG_MCASTLOOP) != 0) {
-    netif_loop_output(netif, p, dest);
+    netif_loop_output(netif, p);
   }
 #endif /* LWIP_IGMP */
 #endif /* ENABLE_LOOPBACK */

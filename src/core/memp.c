@@ -48,6 +48,7 @@
 #include "lwip/igmp.h"
 #include "lwip/api.h"
 #include "lwip/api_msg.h"
+#include "lwip/sockets.h"
 #include "lwip/tcpip.h"
 #include "lwip/sys.h"
 #include "lwip/timers.h"
@@ -369,7 +370,7 @@ memp_init(void)
   for (i = 0; i < MEMP_MAX; ++i) {
     memp_tab[i] = NULL;
 #if MEMP_SEPARATE_POOLS
-    memp = (struct memp*)memp_bases[i];
+    memp = (struct memp*)LWIP_MEM_ALIGN(memp_bases[i]);
 #endif /* MEMP_SEPARATE_POOLS */
     /* create a linked list of memp elements */
     for (j = 0; j < memp_num[i]; ++j) {

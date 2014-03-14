@@ -271,7 +271,7 @@ igmp_report_groups(struct netif *netif)
   LWIP_DEBUGF(IGMP_DEBUG, ("igmp_report_groups: sending IGMP reports on if %p\n", netif));
 
   while (group != NULL) {
-    if (group->netif == netif) {
+    if ((group->netif == netif) && (!(ip_addr_cmp(&(group->group_address), &allsystems)))) {
       igmp_delaying_member(group, IGMP_JOIN_DELAYING_MEMBER_TMR);
     }
     group = group->next;
@@ -674,8 +674,10 @@ igmp_tmr(void)
 static void
 igmp_timeout(struct igmp_group *group)
 {
-  /* If the state is IGMP_GROUP_DELAYING_MEMBER then we send a report for this group */
-  if (group->group_state == IGMP_GROUP_DELAYING_MEMBER) {
+  /* If the state is IGMP_GROUP_DELAYING_MEMBER then we send a report for this group
+     (unless it is the allsystems group) */
+  if ((group->group_state == IGMP_GROUP_DELAYING_MEMBER) &&
+      (!(ip_addr_cmp(&(group->group_address), &allsystems)))) {
     LWIP_DEBUGF(IGMP_DEBUG, ("igmp_timeout: report membership for group with address "));
     ip_addr_debug_print(IGMP_DEBUG, &(group->group_address));
     LWIP_DEBUGF(IGMP_DEBUG, (" on if %p\n", group->netif));
@@ -696,12 +698,18 @@ static void
 igmp_start_timer(struct igmp_group *group, u8_t max_time)
 {
   /* ensure the input value is > 0 */
+#ifdef LWIP_RAND
   if (max_time == 0) {
     max_time = 1;
   }
-#ifdef LWIP_RAND
   /* ensure the random value is > 0 */
   group->timer = (LWIP_RAND() % max_time);
+#else /* LWIP_RAND */
+  /* ATTENTION: use this only if absolutely necessary! */
+  group->timer = max_time / 2;
+  if (group->timer == 0) {
+    group->timer = 1;
+  }
 #endif /* LWIP_RAND */
 }
 
