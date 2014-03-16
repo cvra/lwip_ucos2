@@ -12,4 +12,4 @@ before_script:
   - cd build
   - cmake ..
 
-script: make
+script: make; cd ..; ./run_tests.sh
